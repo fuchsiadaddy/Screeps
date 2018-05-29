@@ -283,6 +283,19 @@ function processSpawn(spawn)
         //         }
         //     }
         // },
+        // builder: {
+        //     count: 2,
+        //     body: fillArray(WORK, 1).concat(fillArray(MOVE, 2)).concat(fillArray(CARRY, 2)),
+        //     name: 'builder-' + randomKey(),
+        //     options: {
+        //         memory: {
+        //             spawn   : spawn.id,
+        //             type    : 'builder',
+        //             status  : 'collecting',
+        //             target  : null,
+        //         }
+        //     }
+        // },
         'harvester-v2': {
             count: 6,
             body: fillArray(WORK, 4).concat(fillArray(MOVE, 4)).concat(fillArray(CARRY, 4)),
@@ -296,10 +309,10 @@ function processSpawn(spawn)
                 }
             }
         },
-        builder: {
+        'builder-v2': {
             count: 2,
-            body: fillArray(WORK, 1).concat(fillArray(MOVE, 2)).concat(fillArray(CARRY, 2)),
-            name: 'builder-' + randomKey(),
+            body: fillArray(WORK, 4).concat(fillArray(MOVE, 10)).concat(fillArray(CARRY, 6)),
+            name: 'builder-v2-' + randomKey(),
             options: {
                 memory: {
                     spawn   : spawn.id,
