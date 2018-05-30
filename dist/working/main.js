@@ -1,6 +1,20 @@
+const screepsplus = require('screepsplus');
+
 var lastTimeStep = null,
     timeSteps = [],
     targetCount = null;
+
+var iconResting     = '📻',
+    iconRepairing   = '🔧',
+    iconHarvesting  = '⛏',
+    iconDropOff     = '📥',
+    iconPickUp      = '📤',
+    iconBuilding    = '🛠',
+    iconClaiming    = '💸',
+    iconAttack      = '🔫',
+    iconHealing     = '💊',
+    iconMoving      = '👞',
+    iconDefending   = '🛡';
 
 function position(obj)
 {
@@ -73,10 +87,11 @@ function dump(val)
     console.log(JSON.stringify(val));
 }
 
-function setStatus(creepMemory, status)
+function setStatus(creepMemory, status, target)
 {
+    target = tryGet(tryGet(target, 'creep', target), 'id', isset(target) ? target : null);
     creepMemory.status = status;
-    creepMemory.target = null;
+    creepMemory.target = target;
 }
 
 function setTargetIfNone(creepMemory, target, callback)
@@ -162,19 +177,57 @@ function object(obj)
     return Game.getObjectById(obj);
 }
 
-function moveTo(creep, target)
+function moveTo(creep, target, within)
 {
-    if(creep && target)
+    within = isset(within) ? within : 1;
+    if(isset(creep) && isset(creep.name) && isset(target))
     {
-        creep.moveTo(target, {
-            visualizePathStyle: {
+        if(!within || creep.pos.inRangeTo(target, within))
+        {
+            return;
+        }
+        var options = {},
+            index   = _.indexOf(_.keys(Memory.creeps), creep.name),
+            colors  = [
+                '#9b232b',
+                '#c3578d',
+                '#ff00ff',
+                '#b103bd',
+                '#1a6e7e',
+                '#4034de',
+                '#16fcd6',
+                '#3ef03c',
+                '#c6fd20',
+                '#829622',
+                '#fdb450',
+            ],
+            color   = colors[index % colors.length],
+            x       = tryGet(target, 'x'),
+            y       = tryGet(target, 'y');
+
+        if(Memory.displayPath)
+        {
+            options['visualizePathStyle'] = {
                 fill: 'transparent',
-                stroke: '#FF00FF',
+                stroke: color,
                 lineStyle: 'dashed',
                 strokeWidth: .15,
                 opacity: .5
-            }
-        });
+            };
+        }
+
+        if(isset(x) && isset(y))
+        {
+            creep.moveTo(x, y, options);
+            return;
+        }
+
+        if(typeof target == 'string')
+        {
+            target = Game.getObjectById(target);
+        }
+
+        creep.moveTo(target, options);
     }
 }
 
@@ -252,6 +305,20 @@ function isObject(obj)
 function isArray(obj)
 {
     return typeof obj == 'object';
+}
+
+function say(creep, message, show)
+{
+    show = isset(show) ? show : true;
+    if(show)
+    {
+        creep.say(message);
+    }
+}
+
+function getAllInArea(room, area)
+{
+    return room.lookAtArea(area.top, area.left, area.bottom, area.right, true);
 }
 
 function processSpawn(spawn)
@@ -356,8 +423,14 @@ function processSpawn(spawn)
                 memory: {
                     spawn   : spawn.id,
                     type    : 'warrior',
-                    status  : 'waiting',
+                    status  : 'defending',
                     target  : null,
+                    targetArea: {
+                        top: 0,
+                        bottom: 49,
+                        left: 0,
+                        right: 49
+                    }
                 }
             }
         },
@@ -430,7 +503,7 @@ function processSpawn(spawn)
 
     Memory.typeCount = typeCount;
 
-    var waitingArea = _.first(spawn.room.find(FIND_FLAGS, {
+    var waitingArea = _.first(room.find(FIND_FLAGS, {
         filter: { name: 'WaitingArea' }
     }));
 
@@ -443,6 +516,9 @@ function processSpawn(spawn)
         }
     });
 
+    var displayIndex = 0,
+        displayChunks = 4;
+
     var source          = object(Memory.targets.source),
         structure       = object(Memory.targets.structure),
         batteryIn       = object(Memory.targets.batteryIn),
@@ -453,7 +529,8 @@ function processSpawn(spawn)
 
     _.each(Memory.creeps, function(creepMemory, creepName)
     {
-        var status  = creepMemory.status,
+        var displayIcon   = Memory.displayIcon;//Game.time % 4 <= 2;//displayIndex++ % displayChunks == Game.time % displayChunks,
+        status  = creepMemory.status,
             target  = Game.getObjectById(creepMemory.target),
             creep   = Game.creeps[creepName];
 
@@ -483,6 +560,7 @@ function processSpawn(spawn)
             {
                 moveTo(creep, spawn);
                 spawn.renewCreep(creep);
+                say(creep, iconRepairing, displayIcon);
                 return;
             }
         }
@@ -490,6 +568,7 @@ function processSpawn(spawn)
         if(creepMemory.status == 'waiting')
         {
             moveTo(creep, waitingArea);
+            say(creep, iconResting, displayIcon);
             return;
         }
 
@@ -497,6 +576,14 @@ function processSpawn(spawn)
         {
             moveTo(creep, spawn);
             spawn.renewCreep(creep);
+            say(creep, iconRepairing, displayIcon);
+            return;
+        }
+
+        if(creepMemory.status == 'goto')
+        {
+            moveTo(creep, creepMemory.target);
+            say(creep, iconMoving, displayIcon);
             return;
         }
 
@@ -508,7 +595,7 @@ function processSpawn(spawn)
                     case 'harvesting': {
                         target = setTargetIfNone(creepMemory, source, function(source)
                         {
-                            if(targetCount[source.id] > 3)
+                            if(targetCount[source.id] > Memory.maxCreepsPerSource)
                             {
                                 targetCount[source.id]--;
                                 return false;
@@ -523,10 +610,12 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.harvest(target);
+                            say(creep, iconHarvesting, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                     case 'storing': {
@@ -542,10 +631,12 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.transfer(target, RESOURCE_ENERGY);
+                            say(creep, iconDropOff, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                 }
@@ -566,10 +657,12 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.withdraw(target, RESOURCE_ENERGY);
+                            say(creep, iconPickUp, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                     case 'building': {
@@ -582,10 +675,12 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.build(target, RESOURCE_ENERGY);
+                            say(creep, iconBuilding, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                 }
@@ -606,6 +701,7 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.withdraw(target, RESOURCE_ENERGY);
+                            say(creep, iconPickUp, displayIcon);
                         }
                     } break;
                     case 'providing': {
@@ -618,6 +714,7 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.upgradeController(target);
+                            say(creep, iconClaiming, displayIcon);
                         }
                     } break;
                 }
@@ -638,10 +735,12 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.withdraw(target, RESOURCE_ENERGY);
+                            say(creep, iconPickUp, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                     case 'providing': {
@@ -661,10 +760,12 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.transfer(target, RESOURCE_ENERGY);
+                            say(creep, iconDropOff, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                 }
@@ -678,10 +779,27 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.attack(target);
+                            say(creep, iconAttack, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
+                        }
+                    } break;
+                    case 'defending': {
+                        target = firstWhere(getAllInArea(room, creepMemory.targetArea), function(entity)
+                        {
+                            return !tryGet(entity, 'my') && tryGet(tryGet(entity, 'owner'), 'username') == 'Invader' && tryGet(entity, 'type') == 'creep';
+                        });
+                        if(target)
+                        {
+                            setStatus(creepMemory, 'fighting', target);
+                        }
+                        else
+                        {
+                            moveTo(creep, creepMemory.target);
+                            say(creep, iconDefending, displayIcon);
                         }
                     } break;
                 }
@@ -690,22 +808,32 @@ function processSpawn(spawn)
                 switch(status)
                 {
                     case 'healing': {
-                        target = Game.getObjectById(creepMemory.target);
+                        target = setTargetIfNone(creepMemory, firstWhere(Game.creeps, function(creep)
+                        {
+                            return creep.memory.type == 'Warrior';
+                        }));
                         if(target)
                         {
                             moveTo(creep, target);
                             if(creep.hits < creep.hitsMax)
                             {
                                 creep.heal(creep);
+                                say(creep, iconHealing, displayIcon);
                             }
                             else if(target.hits < target.hitsMax)
                             {
                                 creep.heal(target);
+                                say(creep, iconHealing, displayIcon);
+                            }
+                            else
+                            {
+                                say(creep, iconMoving, displayIcon);
                             }
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                 }
@@ -720,10 +848,12 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.harvest(target);
+                            say(creep, iconHarvesting, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                 }
@@ -742,10 +872,12 @@ function processSpawn(spawn)
                         {
                             moveTo(creep, target);
                             creep.pickup(target);
+                            say(creep, iconPickUp, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                     case 'dropoff': {
@@ -755,16 +887,18 @@ function processSpawn(spawn)
                         });
                         if(creep.carry[RESOURCE_ENERGY] == 0)
                         {
-                            setStatus(creepMemory, 'harvesting');
+                            setStatus(creepMemory, 'waiting');
                         }
                         else if(target)
                         {
                             moveTo(creep, target);
                             creep.transfer(target, RESOURCE_ENERGY);
+                            say(creep, iconDropOff, displayIcon);
                         }
                         else
                         {
                             moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
                         }
                     } break;
                 }
@@ -792,21 +926,21 @@ function processSpawn(spawn)
             STRUCTURE_EXTENSION,
             STRUCTURE_TOWER,
         ],
-        sources      = spawn.room.find(FIND_SOURCES),
-        structures   = spawn.room.find(FIND_CONSTRUCTION_SITES),
-        batteriesIn  = _.sortBy(findByTypes(spawn.room, FIND_STRUCTURES, batteryInTypes), function(battery)
+        sources      = room.find(FIND_SOURCES),
+        structures   = room.find(FIND_CONSTRUCTION_SITES),
+        batteriesIn  = _.sortBy(findByTypes(room, FIND_STRUCTURES, batteryInTypes), function(battery)
         {
             return findFirstKeyWhere(batteryInTypes, battery.structureType) + (1 - (1 / battery.pos.x + (1 - (1 / battery.pos.y))));
         }),
-        batteriesOut = _.sortBy(findByTypes(spawn.room, FIND_STRUCTURES, batteryOutTypes), function(battery)
+        batteriesOut = _.sortBy(findByTypes(room, FIND_STRUCTURES, batteryOutTypes), function(battery)
         {
             return findFirstKeyWhere(batteryOutTypes, battery.structureType) + (1 - (1 / battery.pos.x + (1 - (1 / battery.pos.y))));
         }),
-        treasuresFrom  = _.sortBy(findByTypes(spawn.room, FIND_STRUCTURES, treasureFromTypes), function(battery)
+        treasuresFrom  = _.sortBy(findByTypes(room, FIND_STRUCTURES, treasureFromTypes), function(battery)
         {
             return findFirstKeyWhere(treasureFromTypes, battery.structureType) + (1 - (1 / battery.pos.x + (1 - (1 / battery.pos.y))));
         }),
-        treasuresTo = _.sortBy(findByTypes(spawn.room, FIND_STRUCTURES, treasureToTypes), function(battery)
+        treasuresTo = _.sortBy(findByTypes(room, FIND_STRUCTURES, treasureToTypes), function(battery)
         {
             return findFirstKeyWhere(treasureToTypes, battery.structureType) + (1 - (1 / battery.pos.x + (1 - (1 / battery.pos.y))));
         });
@@ -814,7 +948,7 @@ function processSpawn(spawn)
     var typeConditions = {
         STRUCTURE_TOWER: function(structure)
         {
-            return getEnergy(structure) < getEnergyCapacity(structure) / 2;
+            return getEnergy(structure) < getEnergyCapacity(structure) * 0.8;
         }
     }
 
@@ -823,9 +957,12 @@ function processSpawn(spawn)
         Memory.targets = {};
     }
 
-    Memory.targets.source  = _.first(_.sortBy(sources, function(source)
+    Memory.targets.source  = _.first(_.filter(_.sortBy(sources, function(source)
     {
-        return targetCount[source.id] && targetCount[source.id] > 2 ? 99999 : 0;
+        return targetCount[source.id] && targetCount[source.id] > (Memory.maxCreepsPerSource * 0.5) ? 99999 : 0;
+    }), function(source)
+    {
+        return !targetCount[source.id] || targetCount[source.id] < Memory.maxCreepsPerSource;
     }));
     Memory.targets.structure    = _.first(_.sortBy(structures, function(structure)
     {
@@ -865,7 +1002,7 @@ function processSpawn(spawn)
 
         return isset(energy) && isset(energyCap) ? energy < energyCap : false;
     });
-    Memory.targets.control = spawn.room.controller;
+    Memory.targets.control = room.controller;
 
     _.each(Memory.targets, function(target, key)
     {
@@ -891,7 +1028,7 @@ function processSpawn(spawn)
             STRUCTURE_CONTAINER,
             STRUCTURE_WALL,
         ],
-        repairNeeded = firstWhere(_.sortBy(findByTypes(spawn.room, FIND_STRUCTURES, repairsNeededTypes), function(structure)
+        repairNeeded = firstWhere(_.sortBy(findByTypes(room, FIND_STRUCTURES, repairsNeededTypes), function(structure)
         {
             return structure.hits;
         }), function(structure)
@@ -899,11 +1036,11 @@ function processSpawn(spawn)
             return structure.hits < structure.hitsMax;
         });
 
-    var repairTicks = 3,
-        waitTicks = 3;
+    var repairTicks = 4,
+        waitTicks = 2;
     if(Game.time % (repairTicks + waitTicks) > (waitTicks - 1))
     {
-        _.each(findByTypes(spawn.room, FIND_STRUCTURES, STRUCTURE_TOWER), function(tower)
+        _.each(findByTypes(room, FIND_STRUCTURES, STRUCTURE_TOWER), function(tower)
         {
             tower.repair(repairNeeded);
         });
@@ -931,4 +1068,6 @@ module.exports.loop = function ()
     {
         dump(time.name + ' took ' + time.timeDiff + ' (Total ' + time.timeStep + ') Status ' + time.status);
     });
+
+    screepsplus.collect_stats();
 }
