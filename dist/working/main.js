@@ -14,7 +14,8 @@ var iconResting     = '📻',
     iconAttack      = '🔫',
     iconHealing     = '💊',
     iconMoving      = '👞',
-    iconDefending   = '🛡';
+    iconDefending   = '🛡',
+    iconScouting    = '👁️';
 
 function position(obj)
 {
@@ -74,7 +75,7 @@ function sum(arr, callback)
 {
     var result = 0;
 
-    _.each(arr, function(item, key)
+    each(arr, function(item, key)
     {
         result += callback(item, key);
     });
@@ -89,7 +90,7 @@ function dump(val)
 
 function setStatus(creepMemory, status, target)
 {
-    target = tryGet(tryGet(target, 'creep', target), 'id', isset(target) ? target : null);
+    target = target && target.id ? target.id : target;
     creepMemory.status = status;
     creepMemory.target = target;
 }
@@ -98,11 +99,12 @@ function setTargetIfNone(creepMemory, target, callback)
 {
     var memTarget = Game.getObjectById(creepMemory.target);
     target = target && target.id ? target.id : target;
+
     if(!isset(creepMemory.target) || !isset(memTarget) || (isset(callback) && !callback(memTarget)))
     {
         creepMemory.target = target;
     }
-    return Game.getObjectById(creepMemory.target);
+    return creepMemory.target;
 }
 
 function findFirstKeyWhere(obj, value)
@@ -121,6 +123,28 @@ function findFirstKeyWhere(obj, value)
     return key;
 }
 
+function offset(room, x, y)
+{
+    //W11N38
+    var name = tryGet(room, 'name');
+    if(isString(name))
+    {
+        var coords = name.replace('W', '').split('N');
+
+        if(isset(coords) && isset(coords[0], coords[1]))
+        {
+            coords[0] = parseInt(coords[0]) + x;
+            coords[1] = parseInt(coords[1]) + y;
+
+            var roomName = 'W' + coords[0] + 'N' + coords[1];
+
+            return tryGet(Game.rooms, roomName);
+        }
+    }
+
+    return null;
+}
+
 function firstWhere(obj, callback)
 {
     var resKey  = null;
@@ -133,11 +157,36 @@ function firstWhere(obj, callback)
     return found ? obj[resKey] : null;
 }
 
+function map(obj, callback, depth, _depth)
+{
+    depth = isset(depth) ? depth : 0;
+    _depth = isset(_depth) ? _depth : 0;
+    if(isset(obj, callback) && typeof callback == 'function')
+    {
+        if((isArray(obj) || isObject(obj)) && _depth < depth)
+        {
+            each(obj, function(val, key)
+            {
+                obj[key] = map(val, callback, depth, _depth + 1);
+            })
+        }
+
+        return callback(obj);
+    }
+
+    return obj;
+}
+
+function sortBy(obj, callback)
+{
+    return _.sortBy(obj, callback);
+}
+
 function inverseOrder(obj)
 {
     var count = _.size(obj);
 
-    return _.sortBy(obj, function()
+    return sortBy(obj, function()
     {
         return count--;
     });
@@ -157,15 +206,45 @@ function lastWhere(obj, callback)
     return found ? obj[resKey] : null;
 }
 
+function each(obj, callback)
+{
+    return _.each(obj, callback);
+}
+
 function findByTypes(room, find, types)
 {
-    types = isArray(types) ? types : [types];
-    return room.find(find, {
-        filter: function(structure)
+    // room    = isArray(room) ? room : [room];
+    find    = isArray(find) ? find : [find];
+    types   = isArray(types) ? types : [types];
+
+    var result = [];
+
+    each(find, function(f)
+    {
+        if(isset(room))
         {
-            return types.includes(structure.structureType);
+            var found = room.find(f, {
+                filter: function(structure)
+                {
+                    return types.includes(structure.structureType);
+                }
+            });
+
+            if(isset(found) && isArray(found))
+            {
+                result = result.concat(found);
+            }
         }
-    })
+        // each(room, function(r)
+        // {
+        //     if(isset(r))
+        //     {
+        //
+        //     }
+        // });
+    });
+
+    return result;
 }
 
 function object(obj)
@@ -177,15 +256,84 @@ function object(obj)
     return Game.getObjectById(obj);
 }
 
+function transfer(creep, target, type)
+{
+    target = object(target);
+    if(isset(target))
+    {
+        creep.transfer(target, type)
+    }
+}
+
+function attack(creep, target)
+{
+    target = object(target);
+    if(isset(target))
+    {
+        creep.attack(target)
+    }
+}
+
+function heal(creep, target)
+{
+    target = object(target);
+    if(isset(target))
+    {
+        creep.heal(target)
+    }
+}
+
+function harvest(creep, target)
+{
+    target = object(target);
+    if(isset(target))
+    {
+        creep.harvest(target)
+    }
+}
+
+function withdraw(creep, target, type)
+{
+    target = object(target);
+    if(isset(target))
+    {
+        creep.withdraw(target, type);
+    }
+}
+
+function build(creep, target)
+{
+    target = object(target);
+    if(isset(target))
+    {
+        creep.build(target);
+    }
+}
+
+function upgradeController(creep, target)
+{
+    target = object(target);
+    if(isset(target))
+    {
+        creep.upgradeController(target);
+    }
+}
+
+function pickup(creep, target)
+{
+    target = object(target);
+    if(isset(target))
+    {
+        creep.pickup(target);
+    }
+}
+
 function moveTo(creep, target, within)
 {
     within = isset(within) ? within : 1;
+
     if(isset(creep) && isset(creep.name) && isset(target))
     {
-        if(!within || creep.pos.inRangeTo(target, within))
-        {
-            return;
-        }
         var options = {},
             index   = _.indexOf(_.keys(Memory.creeps), creep.name),
             colors  = [
@@ -201,9 +349,7 @@ function moveTo(creep, target, within)
                 '#829622',
                 '#fdb450',
             ],
-            color   = colors[index % colors.length],
-            x       = tryGet(target, 'x'),
-            y       = tryGet(target, 'y');
+            color   = colors[index % colors.length];
 
         if(Memory.displayPath)
         {
@@ -216,28 +362,62 @@ function moveTo(creep, target, within)
             };
         }
 
-        if(isset(x) && isset(y))
-        {
-            creep.moveTo(x, y, options);
-            return;
-        }
-
         if(typeof target == 'string')
         {
             target = Game.getObjectById(target);
         }
+        else
+        {
+            target = position(target);
+        }
+
+        // dump(target);
+
+        // if(within && creep.pos.inRangeTo(target, within))
+        // {
+        //     return;
+        // }
 
         creep.moveTo(target, options);
     }
 }
 
-function isset(val)
+function all(obj, callback)
 {
-    return val != undefined && val != null;
+    if(isset(obj, callback) && typeof callback == 'function')
+    {
+        var result = true;
+
+        each(obj, function(val)
+        {
+            result &= callback(val);
+        });
+
+        return result;
+    }
+    return false;
+}
+
+function isset(...val)
+{
+    var result = true;
+
+    each(val, function(val)
+    {
+        result &= val != undefined && val != null;
+    });
+
+    return result;
 }
 
 function tryGet(val, attr, def)
 {
+    def = isset(def) ? def : null;
+    if(isString(attr) && attr.includes('.'))
+    {
+        return tryGetChain(val, attr, def);
+    }
+
     return isset(val) && val[attr] != undefined ? val[attr] : def;
 }
 
@@ -307,6 +487,11 @@ function isArray(obj)
     return typeof obj == 'object';
 }
 
+function isString(obj)
+{
+    return typeof obj == 'string';
+}
+
 function say(creep, message, show)
 {
     show = isset(show) ? show : true;
@@ -321,8 +506,90 @@ function getAllInArea(room, area)
     return room.lookAtArea(area.top, area.left, area.bottom, area.right, true);
 }
 
+function extend()
+{
+    for(var i=1; i<arguments.length; i++)
+    {
+        for(var key in arguments[i])
+        {
+            if(arguments[i].hasOwnProperty(key))
+            {
+                arguments[0][key] = arguments[i][key];
+            }
+        }
+    }
+    return arguments[0];
+}
+
+function copy(value)
+{
+    return extend({}, value);
+}
+
+function replace(a, b)
+{
+    var result = copy(a);
+
+    each(b, function(val, key)
+    {
+        result[key] = val;
+    });
+
+    return result;
+}
+
+function comp(a, o, b)
+{
+    if(!isset(a, b))
+    {
+        return null;
+    }
+
+    var code = a+' '+o+' '+b,
+        result = NaN;
+
+    try
+    {
+        result = eval(code);
+    }
+    catch(exception)
+    {
+        return null;
+    }
+
+    return result;
+}
+
+function getValidTarget(target)
+{
+    if(isString(target))
+    {
+        return isset(object(target)) ? target : null;
+    }
+    else
+    {
+        return isset(position(target)) ? target : null;
+    }
+}
+
 function processSpawn(spawn)
 {
+    var room = spawn.room;
+
+    //dump(offset(room, 1, 0));
+
+    // Memory.stats = isset(Memory.stats) ? Memory.stats : {};
+    // Memory.stats["room." + room.name + ".energyAvailable"] = room.energyAvailable;
+    // Memory.stats["room." + room.name + ".energyCapacityAvailable"] = room.energyCapacityAvailable;
+    // Memory.stats["room." + room.name + ".controllerProgress"] = room.controller.progress;
+
+    var primMemory = {
+        spawn   : spawn.id,
+        target  : null,
+        ticksToLive: {
+            min: 500
+        }
+    };
     var screepsToMake = {
         // harvester: {
         //     count: 4,
@@ -330,10 +597,8 @@ function processSpawn(spawn)
         //     name: 'harvester-' + randomKey(),
         //     options: {
         //         memory: {
-        //             spawn   : spawn.id,
         //             type    : 'harvester',
         //             status  : 'harvesting',
-        //             target  : null,
         //         }
         //     }
         // },
@@ -343,10 +608,8 @@ function processSpawn(spawn)
         //     name: 'provider-' + randomKey(),
         //     options: {
         //         memory: {
-        //             spawn   : spawn.id,
         //             type    : 'provider',
         //             status  : 'collecting',
-        //             target  : null,
         //         }
         //     }
         // },
@@ -356,10 +619,8 @@ function processSpawn(spawn)
         //     name: 'builder-' + randomKey(),
         //     options: {
         //         memory: {
-        //             spawn   : spawn.id,
         //             type    : 'builder',
         //             status  : 'collecting',
-        //             target  : null,
         //         }
         //     }
         // },
@@ -369,10 +630,8 @@ function processSpawn(spawn)
             name: 'harvester-v2-' + randomKey(),
             options: {
                 memory: {
-                    spawn   : spawn.id,
                     type    : 'harvester',
                     status  : 'harvesting',
-                    target  : null,
                 }
             }
         },
@@ -382,10 +641,8 @@ function processSpawn(spawn)
             name: 'builder-v2-' + randomKey(),
             options: {
                 memory: {
-                    spawn   : spawn.id,
                     type    : 'builder',
                     status  : 'collecting',
-                    target  : null,
                 }
             }
         },
@@ -395,10 +652,8 @@ function processSpawn(spawn)
             name: 'provider-' + randomKey(),
             options: {
                 memory: {
-                    spawn   : spawn.id,
                     type    : 'provider',
                     status  : 'collecting',
-                    target  : null,
                 }
             }
         },
@@ -408,10 +663,8 @@ function processSpawn(spawn)
             name: 'treasurer-' + randomKey(),
             options: {
                 memory: {
-                    spawn   : spawn.id,
                     type    : 'treasurer',
                     status  : 'collecting',
-                    target  : null,
                 }
             }
         },
@@ -421,10 +674,13 @@ function processSpawn(spawn)
             name: 'warrior-' + randomKey(),
             options: {
                 memory: {
-                    spawn   : spawn.id,
                     type    : 'warrior',
                     status  : 'defending',
-                    target  : null,
+                    waitingArea: {
+                        x: 32,
+                        y: 25,
+                        roomName: 'W11N38'
+                    },
                     targetArea: {
                         top: 0,
                         bottom: 49,
@@ -440,39 +696,61 @@ function processSpawn(spawn)
             name: 'healer-' + randomKey(),
             options: {
                 memory: {
-                    spawn   : spawn.id,
                     type    : 'healer',
-                    status  : 'waiting',
-                    target  : null,
+                    status  : 'healing',
                 }
             }
         },
-        miner: {
-            count: 1,
-            body: fillArray(MOVE, 3).concat(fillArray(CARRY, 3)).concat(fillArray(WORK, 10)),
-            name: 'miner-' + randomKey(),
-            options: {
-                memory: {
-                    spawn   : spawn.id,
-                    type    : 'miner',
-                    status  : 'waiting',
-                    target  : null,
-                }
-            }
-        },
-        mover: {
-            count: 1,
-            body: fillArray(MOVE, 13).concat(fillArray(CARRY, 13)),
-            name: 'mover-' + randomKey(),
-            options: {
-                memory: {
-                    spawn   : spawn.id,
-                    type    : 'mover',
-                    status  : 'waiting',
-                    target  : null,
-                }
-            }
-        }
+        // miner: {
+        //     count: 0,
+        //     body: fillArray(MOVE, 3).concat(fillArray(CARRY, 3)).concat(fillArray(WORK, 10)),
+        //     name: 'miner-' + randomKey(),
+        //     options: {
+        //         memory: {
+        //             type    : 'miner',
+        //             status  : 'waiting',
+        //         }
+        //     }
+        // },
+        // mover: {
+        //     count: 0,
+        //     body: fillArray(MOVE, 13).concat(fillArray(CARRY, 13)),
+        //     name: 'mover-' + randomKey(),
+        //     options: {
+        //         memory: {
+        //             type    : 'mover',
+        //             status  : 'waiting',
+        //         }
+        //     }
+        // },
+        // paver: {
+        //     count: 1,
+        //     body: fillArray(MOVE, 15).concat(fillArray(WORK, 6)).concat(fillArray(CARRY, 9)),
+        //     name: 'paver-' + randomKey(),
+        //     options: {
+        //         memory: {
+        //             type    : 'paver',
+        //             status  : 'waiting',
+        //             ticksToLive : {
+        //                 min: 1000
+        //             }
+        //         }
+        //     }
+        // },
+        // scout: {
+        //     count: 2,
+        //     body: fillArray(MOVE, 1),
+        //     name: 'scout-' + randomKey(),
+        //     options: {
+        //         memory: {
+        //             type    : 'scout',
+        //             status  : 'scouting',
+        //             ticksToLive : {
+        //                 min: 750
+        //             }
+        //         }
+        //     }
+        // }
     };
 
     if(!Memory.creeps[Memory.creepToRepair])
@@ -484,7 +762,7 @@ function processSpawn(spawn)
 
     targetCount = {};
 
-    _.each(Memory.creeps, function(creepMemory, creepName)
+    each(Memory.creeps, function(creepMemory, creepName)
     {
         var tgt = Game.getObjectById(creepMemory.target);
 
@@ -503,12 +781,16 @@ function processSpawn(spawn)
 
     Memory.typeCount = typeCount;
 
-    var waitingArea = _.first(room.find(FIND_FLAGS, {
+    var waitingAreaFlag = _.first(room.find(FIND_FLAGS, {
         filter: { name: 'WaitingArea' }
     }));
 
-    _.each(screepsToMake, function(template, key)
+    each(screepsToMake, function(template, key)
     {
+        template.options.memory = map(template.options.memory, function(memory)
+        {
+            return replace(primMemory, memory);
+        });
         key = template.options.memory.type;
         if(!spawn.spawning && ((isset(Memory.typeCount[key]) && Memory.typeCount[key] < template.count) || (template.count && !isset(Memory.typeCount[key]))))
         {
@@ -527,17 +809,12 @@ function processSpawn(spawn)
         treasureTo      = object(Memory.targets.treasureTo),
         control         = object(Memory.targets.control);
 
-    _.each(Memory.creeps, function(creepMemory, creepName)
+    each(Memory.creeps, function(creepMemory, creepName)
     {
-        var displayIcon   = Memory.displayIcon;//Game.time % 4 <= 2;//displayIndex++ % displayChunks == Game.time % displayChunks,
-        status  = creepMemory.status,
-            target  = Game.getObjectById(creepMemory.target),
-            creep   = Game.creeps[creepName];
-
-        if(!creep)
-        {
-            return;
-        }
+        var displayIcon = Memory.displayIcon;//Game.time % 4 <= 2;//displayIndex++ % displayChunks == Game.time % displayChunks,
+        status      = creepMemory.status,
+            target      = getValidTarget(creepMemory.target),
+            creep       = Game.creeps[creepName];
 
         if(!creep)
         {
@@ -545,24 +822,37 @@ function processSpawn(spawn)
             return;
         }
 
-        if(!Memory.creepToRepair && creep.ticksToLive < 500)
+        var waitingArea = tryGet(creepMemory, 'waitingArea', waitingAreaFlag);
+
+        if(!Memory.creepToRepair && creep.ticksToLive < tryGet(creepMemory, 'ticksToLive.min', 500))
         {
             Memory.creepToRepair = creepName;
         }
 
         if(creepName == Memory.creepToRepair)
         {
-            if(creep.ticksToLive > 1000)
+            var maxTicksToLive = tryGet(creepMemory, 'ticksToLive.max', false);
+            if(maxTicksToLive && creep.ticksToLive > maxTicksToLive)
             {
                 Memory.creepToRepair = null;
             }
             else
             {
                 moveTo(creep, spawn);
-                spawn.renewCreep(creep);
+                if(spawn.renewCreep(creep) == -8)
+                {
+                    Memory.creepToRepair = null;
+                }
                 say(creep, iconRepairing, displayIcon);
                 return;
             }
+        }
+        else if(creepMemory.status == 'repairing')
+        {
+            moveTo(creep, spawn);
+            spawn.renewCreep(creep);
+            say(creep, iconRepairing, displayIcon);
+            return;
         }
 
         if(creepMemory.status == 'waiting')
@@ -572,17 +862,9 @@ function processSpawn(spawn)
             return;
         }
 
-        if(creepMemory.status == 'repairing')
-        {
-            moveTo(creep, spawn);
-            spawn.renewCreep(creep);
-            say(creep, iconRepairing, displayIcon);
-            return;
-        }
-
         if(creepMemory.status == 'goto')
         {
-            moveTo(creep, creepMemory.target);
+            moveTo(creep, target);
             say(creep, iconMoving, displayIcon);
             return;
         }
@@ -609,7 +891,7 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.harvest(target);
+                            harvest(creep, target);
                             say(creep, iconHarvesting, displayIcon);
                         }
                         else
@@ -630,7 +912,7 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.transfer(target, RESOURCE_ENERGY);
+                            transfer(creep, target, RESOURCE_ENERGY);
                             say(creep, iconDropOff, displayIcon);
                         }
                         else
@@ -656,7 +938,7 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.withdraw(target, RESOURCE_ENERGY);
+                            withdraw(creep, target, RESOURCE_ENERGY);
                             say(creep, iconPickUp, displayIcon);
                         }
                         else
@@ -674,7 +956,7 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.build(target, RESOURCE_ENERGY);
+                            build(creep, target, RESOURCE_ENERGY);
                             say(creep, iconBuilding, displayIcon);
                         }
                         else
@@ -700,12 +982,12 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.withdraw(target, RESOURCE_ENERGY);
+                            withdraw(creep, target, RESOURCE_ENERGY);
                             say(creep, iconPickUp, displayIcon);
                         }
                     } break;
                     case 'providing': {
-                        target = control;
+                        target = setTargetIfNone(creepMemory, control);
                         if(creep.carry[RESOURCE_ENERGY] == 0)
                         {
                             setStatus(creepMemory, 'collecting');
@@ -713,7 +995,7 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.upgradeController(target);
+                            upgradeController(creep, target);
                             say(creep, iconClaiming, displayIcon);
                         }
                     } break;
@@ -734,7 +1016,7 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.withdraw(target, RESOURCE_ENERGY);
+                            withdraw(creep, target, RESOURCE_ENERGY);
                             say(creep, iconPickUp, displayIcon);
                         }
                         else
@@ -759,7 +1041,7 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.transfer(target, RESOURCE_ENERGY);
+                            transfer(creep, target, RESOURCE_ENERGY);
                             say(creep, iconDropOff, displayIcon);
                         }
                         else
@@ -774,31 +1056,33 @@ function processSpawn(spawn)
                 switch(status)
                 {
                     case 'fighting': {
-                        target = Game.getObjectById(creepMemory.target);
                         if(target)
                         {
                             moveTo(creep, target);
-                            creep.attack(target);
+                            attack(creep, target);
                             say(creep, iconAttack, displayIcon);
                         }
                         else
                         {
-                            moveTo(creep, waitingArea);
-                            say(creep, iconResting, displayIcon);
+                            setStatus(creepMemory, 'defending');
                         }
                     } break;
                     case 'defending': {
-                        target = firstWhere(getAllInArea(room, creepMemory.targetArea), function(entity)
+                        target = setTargetIfNone(creepMemory, map(firstWhere(getAllInArea(room, creepMemory.targetArea), function(entity)
                         {
-                            return !tryGet(entity, 'my') && tryGet(tryGet(entity, 'owner'), 'username') == 'Invader' && tryGet(entity, 'type') == 'creep';
-                        });
+                            var player = tryGet(entity, 'creep.owner.username');
+                            return !tryGet(entity, 'my') && player && player.includes('Invader') && tryGet(entity, 'type') == 'creep';
+                        }), function(entity)
+                        {
+                            return tryGet(entity, 'creep');
+                        }));
                         if(target)
                         {
                             setStatus(creepMemory, 'fighting', target);
                         }
                         else
                         {
-                            moveTo(creep, creepMemory.target);
+                            moveTo(creep, waitingArea);
                             say(creep, iconDefending, displayIcon);
                         }
                     } break;
@@ -810,19 +1094,19 @@ function processSpawn(spawn)
                     case 'healing': {
                         target = setTargetIfNone(creepMemory, firstWhere(Game.creeps, function(creep)
                         {
-                            return creep.memory.type == 'Warrior';
+                            return creep.memory.type == 'warrior';
                         }));
                         if(target)
                         {
                             moveTo(creep, target);
                             if(creep.hits < creep.hitsMax)
                             {
-                                creep.heal(creep);
+                                heal(creep, target);
                                 say(creep, iconHealing, displayIcon);
                             }
                             else if(target.hits < target.hitsMax)
                             {
-                                creep.heal(target);
+                                heal(creep, target);
                                 say(creep, iconHealing, displayIcon);
                             }
                             else
@@ -842,12 +1126,11 @@ function processSpawn(spawn)
                 switch(status)
                 {
                     case 'mining': {
-                        target = Game.getObjectById(creepMemory.target);
-                        target = isset(target) ? target : position(creepMemory.targetRoom);
+                        target = creepMemory.target || creepMemory.targetRoom;
                         if(target)
                         {
                             moveTo(creep, target);
-                            creep.harvest(target);
+                            harvest(creep, target);
                             say(creep, iconHarvesting, displayIcon);
                         }
                         else
@@ -862,8 +1145,6 @@ function processSpawn(spawn)
                 switch(status)
                 {
                     case 'pickup': {
-                        target = Game.getObjectById(creepMemory.target);
-                        target = isset(target) ? target : position(creepMemory.target);
                         if(creep.carry[RESOURCE_ENERGY] == creep.carryCapacity)
                         {
                             setStatus(creepMemory, 'dropoff');
@@ -871,7 +1152,7 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.pickup(target);
+                            pickup(creep, target);
                             say(creep, iconPickUp, displayIcon);
                         }
                         else
@@ -892,8 +1173,78 @@ function processSpawn(spawn)
                         else if(target)
                         {
                             moveTo(creep, target);
-                            creep.transfer(target, RESOURCE_ENERGY);
+                            transfer(creep, target, RESOURCE_ENERGY);
                             say(creep, iconDropOff, displayIcon);
+                        }
+                        else
+                        {
+                            moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
+                        }
+                    } break;
+                }
+            } break;
+            case 'paver': {
+                switch(status)
+                {
+                    case 'collecting': {
+                        target = setTargetIfNone(creepMemory, batteryOut, function(target)
+                        {
+                            return getEnergy(target) < getEnergyCapacity(target);
+                        });
+                        if(creep.carry[RESOURCE_ENERGY] == creep.carryCapacity)
+                        {
+                            setStatus(creepMemory, 'paving');
+                        }
+                        else if(target)
+                        {
+                            moveTo(creep, target);
+                            withdraw(creep, target, RESOURCE_ENERGY);
+                            say(creep, iconPickUp, displayIcon);
+                        }
+                        else
+                        {
+                            moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
+                        }
+                    } break;
+                    case 'paving': {
+                        // var rooms = [
+                        //     room,
+                        //     offset(room, -1, 0),
+                        //     offset(room, -1, -1),
+                        // ];
+                        // target = setTargetIfNone(creepMemory, firstWhere(sortBy(findByTypes(rooms, [FIND_CONSTRUCTION_SITES, FIND_STRUCTURES], [STRUCTURE_ROAD]), 'hits'), function(road)
+                        // {
+                        //     return road.hits < road.hitsMax * 0.75;
+                        // }));
+                        // if(creep.carry[RESOURCE_ENERGY] == 0)
+                        // {
+                        //     setStatus(creepMemory, 'collecting');
+                        // }
+                        // else if(target)
+                        // {
+                        //     moveTo(creep, target);
+                        //     creep.repair(target);
+                        //     say(creep, iconBuilding, displayIcon);
+                        // }
+                        // else
+                        {
+                            moveTo(creep, waitingArea);
+                            say(creep, iconResting, displayIcon);
+                        }
+                    } break;
+                }
+            } break;
+            case 'scout': {
+                switch(status)
+                {
+                    case 'scouting': {
+                        target = setTargetIfNone(creepMemory, tryGet(Game.flags, creepName));
+                        if(target)
+                        {
+                            moveTo(creep, target);
+                            say(creep, iconScouting, displayIcon);
                         }
                         else
                         {
@@ -928,19 +1279,19 @@ function processSpawn(spawn)
         ],
         sources      = room.find(FIND_SOURCES),
         structures   = room.find(FIND_CONSTRUCTION_SITES),
-        batteriesIn  = _.sortBy(findByTypes(room, FIND_STRUCTURES, batteryInTypes), function(battery)
+        batteriesIn  = sortBy(findByTypes(room, FIND_STRUCTURES, batteryInTypes), function(battery)
         {
             return findFirstKeyWhere(batteryInTypes, battery.structureType) + (1 - (1 / battery.pos.x + (1 - (1 / battery.pos.y))));
         }),
-        batteriesOut = _.sortBy(findByTypes(room, FIND_STRUCTURES, batteryOutTypes), function(battery)
+        batteriesOut = sortBy(findByTypes(room, FIND_STRUCTURES, batteryOutTypes), function(battery)
         {
             return findFirstKeyWhere(batteryOutTypes, battery.structureType) + (1 - (1 / battery.pos.x + (1 - (1 / battery.pos.y))));
         }),
-        treasuresFrom  = _.sortBy(findByTypes(room, FIND_STRUCTURES, treasureFromTypes), function(battery)
+        treasuresFrom  = sortBy(findByTypes(room, FIND_STRUCTURES, treasureFromTypes), function(battery)
         {
             return findFirstKeyWhere(treasureFromTypes, battery.structureType) + (1 - (1 / battery.pos.x + (1 - (1 / battery.pos.y))));
         }),
-        treasuresTo = _.sortBy(findByTypes(room, FIND_STRUCTURES, treasureToTypes), function(battery)
+        treasuresTo = sortBy(findByTypes(room, FIND_STRUCTURES, treasureToTypes), function(battery)
         {
             return findFirstKeyWhere(treasureToTypes, battery.structureType) + (1 - (1 / battery.pos.x + (1 - (1 / battery.pos.y))));
         });
@@ -957,14 +1308,14 @@ function processSpawn(spawn)
         Memory.targets = {};
     }
 
-    Memory.targets.source  = _.first(_.filter(_.sortBy(sources, function(source)
+    Memory.targets.source  = _.first(_.filter(sortBy(sources, function(source)
     {
         return targetCount[source.id] && targetCount[source.id] > (Memory.maxCreepsPerSource * 0.5) ? 99999 : 0;
     }), function(source)
     {
         return !targetCount[source.id] || targetCount[source.id] < Memory.maxCreepsPerSource;
     }));
-    Memory.targets.structure    = _.first(_.sortBy(structures, function(structure)
+    Memory.targets.structure    = _.first(sortBy(structures, function(structure)
     {
         return -structure.progress;
     }));
@@ -978,7 +1329,7 @@ function processSpawn(spawn)
             return typeConditions[battery.structureType](battery);
         }
 
-        return isset(energy) && isset(energyCap) ? energy < energyCap : false;
+        return isset(energy, energyCap) ? energy < energyCap : false;
     });
     Memory.targets.batteryOut  = firstWhere(batteriesOut, function(battery)
     {
@@ -997,18 +1348,18 @@ function processSpawn(spawn)
 
         if(battery.structureType == STRUCTURE_TOWER)
         {
-            return isset(energy) && isset(energyCap) ? energy < (energyCap / 4) : false;
+            return isset(energy, energyCap) ? energy < (energyCap / 4) : false;
         }
 
-        return isset(energy) && isset(energyCap) ? energy < energyCap : false;
+        return isset(energy, energyCap) ? energy < energyCap : false;
     });
     Memory.targets.control = room.controller;
 
-    _.each(Memory.targets, function(target, key)
+    each(Memory.targets, function(target, key)
     {
         if(isObject(target) || isArray(target))
         {
-            _.each(target, function(target2, key2)
+            each(target, function(target2, key2)
             {
                 if(target2 && target2.id)
                 {
@@ -1028,7 +1379,7 @@ function processSpawn(spawn)
             STRUCTURE_CONTAINER,
             STRUCTURE_WALL,
         ],
-        repairNeeded = firstWhere(_.sortBy(findByTypes(room, FIND_STRUCTURES, repairsNeededTypes), function(structure)
+        repairNeeded = firstWhere(sortBy(findByTypes(room, FIND_STRUCTURES, repairsNeededTypes), function(structure)
         {
             return structure.hits;
         }), function(structure)
@@ -1036,14 +1387,15 @@ function processSpawn(spawn)
             return structure.hits < structure.hitsMax;
         });
 
-    var repairTicks = 4,
-        waitTicks = 2;
-    if(Game.time % (repairTicks + waitTicks) > (waitTicks - 1))
+    var repairTicks     = 3,
+        waitTicks       = 3,
+        towers          = findByTypes(room, FIND_STRUCTURES, STRUCTURE_TOWER),
+        towerIndex      = Memory.tower = (tryGet(Memory, 'tower', -1) + 1) % towers.length,
+        tower           = tryGet(towers, towerIndex, false);
+
+    if(Game.time % (repairTicks + waitTicks) > (waitTicks - 1) && tower)
     {
-        _.each(findByTypes(room, FIND_STRUCTURES, STRUCTURE_TOWER), function(tower)
-        {
-            tower.repair(repairNeeded);
-        });
+        tower.repair(repairNeeded);
     }
 }
 
@@ -1059,15 +1411,22 @@ module.exports.loop = function ()
         }
     }
 
-    _.each(Game.spawns, function(spawn)
+    each(Game.spawns, function(spawn)
     {
         processSpawn(spawn);
     });
 
-    _.each(timeSteps, function(time)
+    each(timeSteps, function(time)
     {
         dump(time.name + ' took ' + time.timeDiff + ' (Total ' + time.timeStep + ') Status ' + time.status);
     });
 
     screepsplus.collect_stats();
+
+    if(Game.time % 120 == 0)
+    {
+        Memory.snapshot = tryGet(Memory, 'snapshot', {});
+        Memory.snapshot.roomSummary = tryGet(Memory.snapshot, 'roomSummary', []);
+        Memory.snapshot.roomSummary.push(Memory.stats.roomSummary);
+    }
 }
